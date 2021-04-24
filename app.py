@@ -10,6 +10,8 @@ app = Flask(__name__)
 app.debug = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blog.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
+app.config['SECRET_KEY'] = 'super secret key'
+
 
 db = SQLAlchemy(app)
 class Users(db.Model):
@@ -201,5 +203,4 @@ def logout():
 
 
 if __name__ == '__main__':
-    app.secret_key='yash1234'
-    app.run()
+    app.run(debug=True)
