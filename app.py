@@ -1,5 +1,4 @@
 from flask import Flask, render_template,request, flash, url_for, session,redirect, logging
-from data import Articles
 from flask_sqlalchemy import SQLAlchemy
 from wtforms import Form, StringField, TextAreaField, PasswordField, validators
 from passlib.hash import sha256_crypt
@@ -10,7 +9,7 @@ from functools import wraps
 app = Flask(__name__)
 app.debug = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blog.db'
-
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
 
 db = SQLAlchemy(app)
 class Users(db.Model):
@@ -28,7 +27,19 @@ class Users(db.Model):
       self.username = username  
       self.password = password
 
-Articles = Articles()
+class Articles(db.Model):
+    __tablename__ = 'articles'
+    id = db.Column(db.Integer(), primary_key=True)
+    title = db.Column(db.String(250))
+    author = db.Column(db.String(100))
+    body = db.Column(db.String())
+    created_date = db.Column(db.DateTime, server_default=db.func.now())
+
+    def __init__(self, title, author, body):  
+      self.title = title  
+      self.author = author  
+      self.body = body  
+
 
 
 @app.route('/')
@@ -41,11 +52,19 @@ def about():
 
 @app.route('/articles')
 def articles():
-    return render_template('articles.html',articles = Articles)
+    result = db.session.query(Articles).all()
+    if result is not None:
+        return render_template('articles.html',articles = result)
+    else:
+        flash('No Article Found!','success')
+        msg = 'No Article Found!'
+        return render_template('articles.html',msg=msg)
+    
 
 @app.route('/article/<string:id>/')
 def article(id):
-    return render_template('article.html',id = id)
+    result = db.session.query(Articles).filter(Articles.id==id).first()
+    return render_template('article.html',article = result)
 
 class RegisterForm(Form):
     name = StringField('Name', validators=[validators.Length(min=1, max=50)])
@@ -78,8 +97,6 @@ def login():
     if request.method=='POST':
         user = request.form['username']
         pass_candidate = request.form['password']
-
-        
         result = db.session.query(Users).filter(Users.username==user).first()
         if result is not None:
             password = result.password
@@ -112,13 +129,73 @@ def is_logged_in(f):
 @app.route('/dashboard')
 @is_logged_in
 def dashboard():
-    return render_template('dashboard.html')
+    result = db.session.query(Articles).all()
+    if result is not None:
+        return render_template('dashboard.html',articles = result)
+    else:
+        flash('No Article Found!','success')
+        msg = 'No Article Found!'
+        return render_template('dashboard.html',msg=msg)
+
+class ArticleForm(Form):
+    title = StringField('Title', validators=[validators.Length(min=1, max=200)])
+    body = TextAreaField('Body', [validators.Length(min=30)])
+
+@app.route('/add_article',methods=['GET','POST'])
+@is_logged_in
+def add_article():
+    form = ArticleForm(request.form)
+    if request.method == 'POST' and form.validate():
+        title = form.title.data
+        body = form.body.data
+            
+
+        article = Articles(title,session['username'],body)
+        db.session.add(article)
+        db.session.commit()
+        flash('Article has created!','success')
+        return redirect(url_for('dashboard'))
+    return render_template('add_article.html',form=form)
+
+@app.route('/edit_article/<string:id>',methods=['GET','POST'])
+@is_logged_in
+def edit_article(id):
+    result = db.session.query(Articles).filter(Articles.id==id).first()
+    form = ArticleForm(request.form)
+    form.title.data = result.title
+    form.body.data = result.body
+    if request.method == 'POST' and form.validate():
+        title = request.form['title']
+        body = request.form['body']
+            
+        result.title = title
+        result.body = body
+        db.session.commit()
+        flash('Article has updated!','success')
+        return redirect(url_for('dashboard'))
+        
+    return render_template('edit_article.html',form=form)
+
+@app.route('/delete_article/<string:id>')
+@is_logged_in
+def delete(id):
+    delete_article = Articles.query.get_or_404(id)
+    try:
+        db.session.delete(delete_article)
+        db.session.commit()
+        flash('Article has deleted!','success')
+        return redirect(url_for('dashboard'))
+    except:
+        flash('Some issue in deleting article!','danger')
+        return redirect(url_for('dashboard'))
+
     
 @app.route('/logout')
+@is_logged_in
 def logout():
     session.clear()
     flash('You are now logged out! ','success')
-    return redirect(url_for('login'))
+    return redirect(url_for('index'))
 
 
 
